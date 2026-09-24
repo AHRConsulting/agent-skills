@@ -1,7 +1,7 @@
 {
   "name": "ahr-foundation",
   "description": "Guidance for using Ahr.Foundation Result and Option APIs correctly",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": {
     "name": "AHR Consulting"
   },
