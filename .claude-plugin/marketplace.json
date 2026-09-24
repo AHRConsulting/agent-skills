@@ -1,0 +1,13 @@
+{
+  "name": "ahr-consulting",
+  "owner": {
+    "name": "AHR Consulting"
+  },
+  "plugins": [
+    {
+      "name": "ahr-foundation",
+      "source": "./plugins/ahr-foundation",
+      "description": "Guidance for using Ahr.Foundation Result and Option APIs correctly"
+    }
+  ]
+}

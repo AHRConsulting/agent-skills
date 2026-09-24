@@ -1,0 +1,11 @@
+{
+  "name": "ahr-foundation",
+  "description": "Guidance for using Ahr.Foundation Result and Option APIs correctly",
+  "version": "0.1.0",
+  "author": {
+    "name": "AHR Consulting"
+  },
+  "homepage": "https://github.com/AHRConsulting/agent-skills",
+  "repository": "https://github.com/AHRConsulting/agent-skills",
+  "license": "Apache-2.0"
+}

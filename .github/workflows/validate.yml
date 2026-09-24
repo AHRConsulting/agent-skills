@@ -1,0 +1,29 @@
+name: Validate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate JSON manifests
+        run: |
+          jq empty .claude-plugin/marketplace.json
+          jq empty plugins/ahr-foundation/.claude-plugin/plugin.json
+
+      - name: Validate skill metadata
+        shell: bash
+        run: |
+          skill=plugins/ahr-foundation/skills/ahr-foundation/SKILL.md
+          test "$(sed -n '2p' "$skill")" = "name: ahr-foundation"
+          grep -q '^description: .\+' "$skill"
+          test "$(grep -c '^---$' "$skill")" -ge 2
