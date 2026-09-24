@@ -11,8 +11,14 @@ This skill provides expert instructions and architectural guidelines for generat
 The skill identity is `ahr-foundation`; it documents the `Ahr.Foundation` NuGet package and does not carry an independent semantic version. Install the stable package with:
 
 ```bash
-dotnet add package Ahr.Foundation --version 0.1.0
+dotnet add package Ahr.Foundation --version 0.1.1
 ```
+
+Further reading:
+
+- Full docs: https://ahrconsulting.github.io/Ahr.Foundation
+- Docs guidance: https://ahrconsulting.github.io/Ahr.Foundation/docs/index.html
+- API reference: https://ahrconsulting.github.io/Ahr.Foundation/api/Ahr.Foundation.html
 
 ---
 
@@ -36,6 +42,8 @@ dotnet add package Ahr.Foundation --version 0.1.0
 3. **Platform & Framework Agnostic**:
    - `Ahr.Foundation` has no runtime package dependencies and no UI or platform-specific coupling.
    - Can be used in Console apps, Microservices, Web APIs, Desktop, Mobile, and Cloud Functions.
+   - The `net10.0` build is `IsAotCompatible`: no reflection or dynamic code generation, so it works
+     unmodified with `PublishAot` and trimming.
 
 ---
 
