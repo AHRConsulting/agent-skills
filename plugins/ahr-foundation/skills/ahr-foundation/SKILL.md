@@ -11,7 +11,7 @@ This skill provides expert instructions and architectural guidelines for generat
 The skill identity is `ahr-foundation`; it documents the `Ahr.Foundation` NuGet package and does not carry an independent semantic version. Install the stable package with:
 
 ```bash
-dotnet add package Ahr.Foundation --version 0.1.1
+dotnet add package Ahr.Foundation --version 0.2.0
 ```
 
 Further reading:
@@ -32,6 +32,8 @@ Further reading:
    - `Option<T>.None` is intentionally represented by the safe default value.
    - Always instantiate via factories: `Result.Success()`, `Result.Failure(error)`, `Result<T>.Success(value)`, `Result<T>.Failure(error)`, or extension methods (`val.ToSuccess()`, `"error".ToFailure()`).
    - The Roslyn analyzer rule `AHRF001` detects default construction at compile-time.
+   - `AHRF005` (Info) reports a Result array created without element initializers (`new Result<T>[n]`); assign every element with `Success` or `Failure` before use.
+   - `ToString()` never throws on any state (`Success`, `Success(value)`, `Failure(error)`, `Some(value)`, `None`, `Uninitialized`), so values are safe to log or interpolate.
 
 2. **Branch Access Rules**:
    - Accessing `.Value` on a failed result throws `InvalidOperationException`, including custom-error results.
@@ -71,7 +73,12 @@ Result<User, DomainError> customFail = Result<User, DomainError>.Failure(DomainE
 Option<string> some = Option<string>.Some("value");
 Option<string> none = Option<string>.None; // or default
 Option<string> safe = nullableValue.ToOption();
-Option<string> firstMatch = list.FirstOrNone(x => x.StartsWith("A"));
+Option<string> firstMatch = list.FirstOrNone(x => x.StartsWith("A")); // None if empty, no match, or the match is null
+Option<int> fromNullable = nullableInt.ToOption(); // int? -> Option<int>
+Option<User> owner = members.SingleOrNone(m => m.IsOwner); // throws if more than one matches
+Option<Order> latest = orders.LastOrNone();
+Option<decimal> price = prices.GetValueOrNone("apple"); // IReadOnlyDictionary lookup
+IEnumerable<User> found = ids.Select(cache.Find).Values(); // keeps Some values
 Option<int> filtered = Option<int>.Some(21).Where(x => x > 0);
 Result<int> converted = filtered.ToResult(new Error("Value is missing"));
 
@@ -93,6 +100,11 @@ validation, and tap operations. It also provides `OrElseAsync(Func<Task<fallback
 `Task<Result>`, `Task<Result<T>>`, `Task<Result<T, TError>>`, and `Task<Option<T>>`, letting
 `OrElseAsync` be chained directly off an unawaited task, e.g.
 `await repository.FindLocalAsync(id).OrElseAsync(() => repository.FindRemoteAsync(id))`.
+
+Every task extension also accepts a **synchronous** delegate (`MapAsync(x => x.Total)`,
+`BindAsync(x => Validate(x))`, `EnsureAsync(x => x > 0, error)`, `TapAsync(x => log(x))`), and
+`MatchAsync` ends a task pipeline with synchronous or asynchronous branches. Do not insert an
+intermediate `await` just to run a synchronous step; async lambdas still bind to the async overloads.
 
 ### Pipeline Composition (Railway-Oriented Programming)
 
@@ -117,6 +129,13 @@ public async Task<Result<OrderConfirmation>> ProcessOrderPipelineAsync(OrderRequ
         .TapAsync(conf => NotifyCustomerAsync(conf))
         .TapErrorAsync(err => LogAlertAsync(err));
 }
+
+// Mixing synchronous steps into an async pipeline and matching at the end
+public Task<string> DescribeOrderAsync(int id) =>
+    repository.LoadOrderAsync(id)
+        .MapAsync(order => order.Total)                      // synchronous delegate
+        .EnsureAsync(total => total > 0, new Error("Empty order"))
+        .MatchAsync(total => $"Total: {total}", error => error.Message);
 ```
 
 ### LINQ Query Syntax
@@ -157,10 +176,17 @@ string message = result.Match(
     onSuccess: user => $"Welcome, {user.Name}!",
     onFailure: error => $"Error: {error.Message}");
 
-// Void / Action Match
+// Void / Action Match, which returns the original result
 result.Match(
     onSuccess: user => SendWelcomeEmail(user),
     onFailure: error => ReportToTelemetry(error));
+
+// Three-way Match on Result<Option<T>>, with values or actions
+string label = lookup.Match(user => user.Name, () => "Not found", error => error.Message);
+lookup.Match(
+    onSome: user => Select(user),
+    onNone: () => { },
+    onFailure: error => ShowError(error));
 ```
 
 ### Boundary Exception Handling: Result.Try / Result.TryAsync
@@ -180,20 +206,28 @@ Result<Customer> customer = await Result.TryAsync(() => repository.GetCustomerAs
 Result<Customer, DomainError> customCustomer = await Result.TryAsync(
     () => repository.GetCustomerAsync(),
     ex => DomainError.FromException(ex));
+
+// Cancellation-aware: only the caller's cancellation propagates; a timeout becomes a Failure
+Result<string> body = await Result.TryAsync(
+    token => httpClient.GetStringAsync(url, token),
+    cancellationToken);
 ```
 
 Rules that apply to every overload:
 
-- `OperationCanceledException` (including `TaskCanceledException`) always propagates unchanged; it
-  is never converted into a `Failure`.
+- Overloads without a token propagate every `OperationCanceledException` (including
+  `TaskCanceledException`) unchanged. The overloads that take a `CancellationToken` propagate only
+  that token's cancellation and convert other cancellations, such as an `HttpClient` timeout, into a
+  `Failure`. The `AHRF007` analyzer (Info) suggests them when an operation uses a caller's token.
 - Built-in-`Error` overloads (`Try`, `Try<T>`, `TryAsync`, `TryAsync<T>`) call
   `Error.FromException` automatically. Custom-error overloads (`Try<T, TError>`,
   `TryAsync<T, TError>`) require an explicit `Func<Exception, TError>` error factory.
 - A `null` operation or error factory, or a `null` value/error/task produced by the operation, is
   not swallowed — it propagates as a real exception instead of silently becoming a `Failure`.
 - The `AHRF002` analyzer (Info) flags a manual try/catch that only constructs a Result success in
-  the try block and a Result failure in the catch block, and suggests `Result.Try`/`Result.TryAsync`
-  instead.
+  the try block and a Result failure in a catch-all block, and suggests `Result.Try`/`Result.TryAsync`
+  instead. Keep a manual catch of `OperationCanceledException` that builds a failure: `Result.Try`
+  rethrows cancellation, so `AHRF002` does not report it.
 - The `AHRF003` analyzer (Warning) flags a synchronous `Result.Try` call whose delegate discards an
   awaitable (`Task`/`Task<T>`/`ValueTask`/`ValueTask<T>`), e.g. `Result.Try(() =>
   repository.GetCustomerAsync())`. This silently runs the operation fire-and-forget: exceptions
@@ -212,14 +246,19 @@ Rules that apply to every overload:
 
 ## 3. Best Practices for AI Agents
 
-1. **Never suppress AHRF001**: Always replace `default(Result)`, `default(Result<T>)`, `default(Result<T, TError>)`, or parameterless result construction with explicit factories. `default(Option<T>)` is valid and represents `None`.
+1. **Never suppress AHRF001**: Always replace `default(Result)`, `default(Result<T>)`, `default(Result<T, TError>)`, or parameterless result construction with explicit factories. `default(Option<T>)` is valid and represents `None`. When `AHRF005` reports a result array, make sure every element is assigned before it is read, or build the array from factories directly.
 2. **Propagate Errors Early**: Use `.Bind()` and `.BindAsync()` to stop execution on first failure without throwing exceptions.
 3. **Keep Exceptions at the Boundary**: Convert infrastructure exceptions to domain `Error` instances via `Error.FromException(ex)` or `ex.ToFailure<T>()`. Null payloads, errors, delegates, and task results are rejected by the relevant factory or composition method rather than silently converted.
 4. **Use Options for Absence, Results for Failure**: If "not found" is normal/expected, return `Option<T>`. If absence signifies an error condition that stops an operation, return `Result<T>`.
 5. **Choose the Clearest Composition Style**: Use `Map`/`Bind` for short chains, and LINQ query syntax when several dependent steps need earlier values in scope. Never use query syntax for async pipelines.
 6. **Prefer Result.Try/TryAsync over manual try/catch**: When converting an operation that can throw
    into a `Result`, use `Result.Try`/`Result.TryAsync` instead of a manual try/catch that constructs
-   `Success`/`Failure`. Heed `AHRF002` when it fires.
+   `Success`/`Failure`. Heed `AHRF002` when it fires. To catch only expected exceptions, pass
+   `catchWhen: ex => ex is HttpRequestException` instead of hand-writing a filtered catch. Keep a
+   `finally` in a `try/finally` around the call, or use a `using` inside the operation. Check
+   `error.IsCancellation` to tell a timeout from another failure. When the caller's cancellation must
+   return a failure rather than throw, chain `.CatchCancellationAsync(Errors.Cancelled, ct)` instead of
+   a hand-written `catch (OperationCanceledException)`.
 7. **Never pass an awaitable-returning delegate to a synchronous `Result.Try` overload**: If the
    operation returns `Task`/`Task<T>`/`ValueTask`/`ValueTask<T>`, use `Result.TryAsync` so exceptions
    thrown during the awaited operation are actually captured. Heed `AHRF003` when it fires.
@@ -236,3 +275,48 @@ Rules that apply to every overload:
     `GetValueOrDefault`, which only extracts a plain payload value. Prefer the lazy/async overload
     over the eager one whenever constructing the fallback has any cost, since it is only invoked on
     failure/`None`.
+11. **Never `Map` to a nullable value**: `Some`/`Success` never hold `null`, so a mapping that
+    returns `null` throws. When the mapped value may be absent, use
+    `.Bind(x => x.MiddleName.ToOption())` or a `Bind` that returns an explicit `Failure`. The same
+    applies to `Result.Try`/`TryAsync`: an operation that can return `null` should return an `Option`,
+    for example `Result.TryAsync(async t => (await ShowAsync(t)).ToOption(), ct)`. Heed `AHRF006`
+    when it fires.
+12. **Pass the caller's cancellation token to `Result.TryAsync`**: When the operation uses a
+    `CancellationToken`, prefer `Result.TryAsync(token => op(token), cancellationToken)` so a
+    timeout becomes a `Failure` while the caller's cancellation still propagates. Heed `AHRF007`.
+13. **Use `Tap` to keep the value and `Bind` to replace it**: On every type, a `Tap` function returning
+    the same family stops the pipeline on failure or `None`, so `.Tap(order => repository.Save(order))`
+    keeps `order`. Do not write `.Bind(order => repository.Save(order).Map(_ => order))`. A block body
+    without a `return`, or a function returning the other family or a different error type, ignores
+    the returned value. Heed `AHRF008` when it fires, and write `_ = operation();` only when ignoring
+    the value is intentional.
+14. **Continue from a lookup with `ToResultAsync`**: Prefer
+    `await repository.FindAsync(id).ToResultAsync(error).BindAsync(...)` over nested `await`.
+15. **Pass a string to `Ensure` for a simple message**: `.Ensure(x => x > 0, "Must be positive.")` on
+    `Result<T>`.
+16. **Compose a lookup that can fail without nesting**: On `Result<Option<T>>` and
+    `Result<Option<T>, TError>`, `Match(onSome, onNone, onFailure)` ends the chain and handles all three
+    outcomes, with functions that return a value or with actions that return the original result. All
+    three handlers are required; use `TapSome` or `TapError` for one branch. `TapSome` runs a step
+    for a found value and keeps it; like `Tap`, a step returning a failed result stops the pipeline. `MapSome` changes a found value, `BindSome` continues
+    with another lookup of the same shape, and `EnsureSome(error)` treats `None` as a failure. For a
+    missing value, `SomeOr(fallback)` returns a `Result<T>` with the fallback and `BindNone` tries
+    another lookup. Each has an async form, and each keeps an existing failure. A missing value or
+    failure passes through `MapSome` and `BindSome`. `GetValueOrDefault` and `ToOption` discard the
+    failure, and `AHRF009` points these calls out. Flatten a nested result with `Bind(inner => inner)`.
+17. **Never drop a result**: A statement such as `Save(order);` or `await SaveAsync(order, ct);` loses
+    the failure, even when awaited. Handle or return the result, or end the chain with `TapError` or
+    `TapErrorAsync`. Heed `AHRF010` when it fires, and write `_ = operation();` only when ignoring the
+    failure is intentional.
+18. **Let `Bind` pass a failure on**: Do not write `x.IsFailure ? Result<U>.Failure(x.Error) : Next(x.Value)`
+    or `if (x.IsFailure) return Result<U>.Failure(x.Error);`. Write `x.Bind(Next)`, and heed `AHRF011`.
+    In a method returning a task, `return Task.FromResult(Result.Failure(x.Error));` becomes
+    `return x.BindAsync(...)`.
+    Use `ToResult()` to drop a value and keep only success or failure, and `MapError(error => new
+    ApiError(...))` to turn `Result<T>` into `Result<T, ApiError>`. Payload-free `Result` has
+    `MapError(error => ...)` returning `Result` for rewording a failure.
+19. **Use `Traverse`, `Sequence`, and `Partition` for lists**: Do not loop over items, check
+    `IsFailure`, and collect values by hand. `items.Traverse(step)` (or `TraverseAsync`) returns all the
+    values or the first failure; `results.Sequence()` does the same for results that already exist.
+    When every item must run and every error matters, use `Partition` or `PartitionAsync`, which
+    return `(Values, Errors)`. The async forms run one item at a time.
