@@ -17,14 +17,35 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Validate JSON manifests
+        shell: bash
         run: |
           jq empty .claude-plugin/marketplace.json
-          jq empty plugins/ahr-foundation/.claude-plugin/plugin.json
+          for manifest in plugins/*/.claude-plugin/plugin.json; do
+            jq empty "$manifest"
+          done
+
+      - name: Check every plugin is listed, and every listing has a plugin
+        shell: bash
+        run: |
+          listed=$(jq -r '.plugins[].source' .claude-plugin/marketplace.json | sed 's#^\./plugins/##' | sort)
+          present=$(find plugins -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)
+          if [ "$listed" != "$present" ]; then
+            echo "Listed in .claude-plugin/marketplace.json:"; echo "$listed"
+            echo "Folders under plugins/:"; echo "$present"
+            exit 1
+          fi
 
       - name: Validate skill metadata
         shell: bash
         run: |
-          skill=plugins/ahr-foundation/skills/ahr-foundation/SKILL.md
-          test "$(sed -n '2p' "$skill")" = "name: ahr-foundation"
-          grep -q '^description: .\+' "$skill"
-          test "$(grep -c '^---$' "$skill")" -ge 2
+          status=0
+          for skill in plugins/*/skills/*/SKILL.md; do
+            name=$(basename "$(dirname "$skill")")
+            front=$(awk 'NR == 1 && $0 != "---" { exit } NR > 1 && $0 == "---" { exit } NR > 1 { print }' "$skill")
+            if [ "$(head -1 "$skill")" != "---" ] || [ "$(grep -c '^---$' "$skill")" -lt 2 ]; then
+              echo "$skill has no frontmatter"; status=1; continue
+            fi
+            grep -qx "name: $name" <<<"$front" || { echo "$skill needs name: $name"; status=1; }
+            grep -q '^description: .' <<<"$front" || { echo "$skill needs a description"; status=1; }
+          done
+          exit $status

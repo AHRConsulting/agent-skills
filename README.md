@@ -11,6 +11,7 @@ manifests so the instructions cannot drift between tools.
 
 | Skill | Purpose |
 |---|---|
+| `ahr-assurance` | Write, convert and review .NET tests as `Ahr.Assurance` scenarios. |
 | `ahr-foundation` | Use `Ahr.Foundation` results, options, analyzers, and composition APIs correctly. |
 
 ## GitHub Copilot and compatible agents
@@ -18,17 +19,19 @@ manifests so the instructions cannot drift between tools.
 Install the skill directory using the mechanism supported by your agent, or copy:
 
 ```text
+plugins/ahr-assurance/skills/ahr-assurance
 plugins/ahr-foundation/skills/ahr-foundation
 ```
 
-into the agent's skills directory. The folder contains the standard `SKILL.md` entry point.
+into the agent's skills directory. Each folder contains the standard `SKILL.md` entry point.
 
 ## Claude Code
 
-Add this repository as a marketplace, then install the plugin:
+Add this repository as a marketplace, then install the plugins:
 
 ```text
 /plugin marketplace add AHRConsulting/agent-skills
+/plugin install ahr-assurance@ahr-consulting
 /plugin install ahr-foundation@ahr-consulting
 ```
 
@@ -38,7 +41,7 @@ For local validation before publication:
 claude --plugin-dir ./plugins/ahr-foundation
 ```
 
-The Claude Code invocation name is `/ahr-foundation:ahr-foundation`.
+The Claude Code invocation names are `/ahr-assurance:ahr-assurance` and `/ahr-foundation:ahr-foundation`.
 
 ## Scope
 
