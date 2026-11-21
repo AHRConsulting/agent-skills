@@ -5,6 +5,11 @@
   },
   "plugins": [
     {
+      "name": "ahr-assurance",
+      "source": "./plugins/ahr-assurance",
+      "description": "Guidance for writing, converting and reviewing .NET tests as Ahr.Assurance scenarios"
+    },
+    {
       "name": "ahr-foundation",
       "source": "./plugins/ahr-foundation",
       "description": "Guidance for using Ahr.Foundation Result and Option APIs correctly"

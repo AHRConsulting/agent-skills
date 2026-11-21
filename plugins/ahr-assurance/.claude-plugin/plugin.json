@@ -1,0 +1,11 @@
+{
+  "name": "ahr-assurance",
+  "description": "Guidance for writing, converting and reviewing .NET tests as Ahr.Assurance scenarios",
+  "version": "0.1.0",
+  "author": {
+    "name": "AHR Consulting"
+  },
+  "homepage": "https://github.com/AHRConsulting/agent-skills",
+  "repository": "https://github.com/AHRConsulting/agent-skills",
+  "license": "Apache-2.0"
+}
